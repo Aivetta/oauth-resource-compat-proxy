@@ -3,16 +3,19 @@
 Small Node.js proxy for the Claude MCP OAuth + Microsoft Entra `AADSTS9010010`
 compatibility issue.
 
-Claude may send an RFC 8707 `resource` value based on the public MCP URL, while
-an existing Entra app registration may expect scopes to be fully qualified under
-its Application ID URI, for example:
+Claude sends an RFC 8707 `resource` value based on the public MCP URL. Microsoft
+Entra validates requests against the Application ID URI configured on the app
+registration, and the requested scope must belong to that same resource.
+
+For example, if Entra expects:
 
 ```text
-https://your-proxy.example.com/mcp/Tasks.Read
+Application ID URI = api://00000000-0000-0000-0000-000000000000
+Scope              = api://00000000-0000-0000-0000-000000000000/Tasks.Read
 ```
 
 This proxy lets Claude talk to a public MCP URL, while the proxy rewrites OAuth
-authorize/token parameters before forwarding them to Entra.
+authorize/token parameters to the exact resource and scope values Entra accepts.
 
 ## What It Does
 
@@ -38,12 +41,19 @@ Scope replacement uses exact token matching. If Claude sends `Tasks.Read`, set
 `https://your-proxy.example.com/mcp/Tasks.Read`, set `PUBLIC_SCOPE` to that full
 value.
 
-### Confirmed #977 Workaround
+The most important rule:
+
+```text
+AUDIENCE_RESOURCE must be exactly the Entra Application ID URI.
+UPSTREAM_SCOPE must be exactly the scope value Entra accepts for that resource.
+```
+
+There is no inference from suffixes or hostnames.
+
+### HTTPS Application ID URI
 
 Use this when Entra accepts the same HTTPS Application ID URI as the public MCP
-resource, but Claude sends a short scope name. This is the behavior described in
-the Claude/MCP issue: the public short scope is rewritten into the fully
-qualified Entra scope.
+resource.
 
 ```sh
 PUBLIC_BASE_URL=https://your-proxy.example.com
@@ -70,11 +80,9 @@ resource=https://your-proxy.example.com/mcp
 scope=https://your-proxy.example.com/mcp/Tasks.Read
 ```
 
-### Additional Compatibility Mode
+### api:// Application ID URI
 
-Use this when Entra is registered with an `api://...` Application ID URI. This
-is a reasonable Entra compatibility strategy, but it is separate from the
-specific short-scope workaround confirmed in the Claude/MCP issue.
+Use this when Entra is registered with an `api://...` Application ID URI.
 
 ```sh
 PUBLIC_BASE_URL=https://your-proxy.example.com
@@ -100,6 +108,9 @@ into:
 resource=api://00000000-0000-0000-0000-000000000000
 scope=api://00000000-0000-0000-0000-000000000000/Tasks.Read
 ```
+
+Both examples follow the same rule: the `resource` sent to Entra is the app's
+Application ID URI, and the `scope` sent to Entra belongs to that same resource.
 
 If Entra rejects the `resource` parameter even after replacement, set:
 
